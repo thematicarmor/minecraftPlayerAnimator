@@ -218,8 +218,16 @@ public final class KeyframeAnimation implements Supplier<UUID> {
         public final State bendDirection;
         @Getter
         public final boolean isBendable;
+        @Nullable
+        public final State scaleX;
+        @Nullable
+        public final State scaleY;
+        @Nullable
+        public final State scaleZ;
+        @Getter
+        public final boolean isScalable;
 
-        public StateCollection(float x, float y, float z, float pitch, float yaw, float roll, float translationThreshold, boolean bendable) {
+        public StateCollection(float x, float y, float z, float pitch, float yaw, float roll, float scaleX, float scaleY, float scaleZ, float translationThreshold, boolean bendable, boolean scalable) {
             this.x = new State("x", x, translationThreshold, false);
             this.y = new State("y", y, translationThreshold, false);
             this.z = new State("z", z, translationThreshold, false);
@@ -234,6 +242,16 @@ public final class KeyframeAnimation implements Supplier<UUID> {
                 this.bendDirection = null; //This will cause some errors, but fixes the invalid data problem
             }
             this.isBendable = bendable;
+            if (scalable) {
+                this.scaleX = new State("scaleX", scaleX, 0, false);
+                this.scaleY = new State("scaleY", scaleY, 0, false);
+                this.scaleZ = new State("scaleZ", scaleZ, 0, false);
+            } else {
+                this.scaleX = null;
+                this.scaleY = null;
+                this.scaleZ = null;
+            }
+            this.isScalable = scalable;
         }
 
         public StateCollection(StateCollection stateCollection) {
@@ -251,10 +269,24 @@ public final class KeyframeAnimation implements Supplier<UUID> {
                 this.bend = null;
                 this.bendDirection = null;
             }
+            this.isScalable = stateCollection.isScalable;
+            if (stateCollection.isScalable) {
+                this.scaleX = stateCollection.scaleX.copy();
+                this.scaleY = stateCollection.scaleY.copy();
+                this.scaleZ = stateCollection.scaleZ.copy();
+            } else {
+                this.scaleX = null;
+                this.scaleY = null;
+                this.scaleZ = null;
+            }
+        }
+
+        public StateCollection(float x, float y, float z, float pitch, float yaw, float roll, float threshold, boolean bendable) {
+            this(x, y, z, pitch, yaw, roll, 1.0F, 1.0F, 1.0F, threshold, true, false);
         }
 
         public StateCollection(float threshold) {
-            this(0, 0, 0, 0, 0, 0, threshold, true);
+            this(0, 0, 0, 0, 0, 0, 1.0F, 1.0F, 1.0F, threshold, true, true);
         }
 
         @Override
@@ -265,12 +297,17 @@ public final class KeyframeAnimation implements Supplier<UUID> {
             StateCollection that = (StateCollection) o;
 
             if (isBendable != that.isBendable) return false;
+            if (isScalable != that.isScalable) return false;
+
             if (!x.equals(that.x)) return false;
             if (!y.equals(that.y)) return false;
             if (!z.equals(that.z)) return false;
             if (!pitch.equals(that.pitch)) return false;
             if (!yaw.equals(that.yaw)) return false;
             if (!roll.equals(that.roll)) return false;
+            if (!Objects.equals(scaleX, that.scaleX)) return false;
+            if (!Objects.equals(scaleY, that.scaleY)) return false;
+            if (!Objects.equals(scaleZ, that.scaleZ)) return false;
             if (!Objects.equals(bend, that.bend)) return false;
             return Objects.equals(bendDirection, that.bendDirection);
         }
@@ -287,12 +324,16 @@ public final class KeyframeAnimation implements Supplier<UUID> {
             result = 31 * result + (bend != null ? bend.hashCode() : 0);
             result = 31 * result + (bendDirection != null ? bendDirection.hashCode() : 0);
             result = 31 * result + (isBendable ? 1 : 0);
+            result = 31 * result + (scaleX != null ? scaleX.hashCode() : 0);
+            result = 31 * result + (scaleY != null ? scaleY.hashCode() : 0);
+            result = 31 * result + (scaleZ != null ? scaleZ.hashCode() : 0);
+            result = 31 * result + (isScalable ? 1 : 0);
             return result;
         }
 
 
         public void fullyEnablePart(boolean always) {
-            if (always || x.isEnabled || y.isEnabled || z.isEnabled || pitch.isEnabled || yaw.isEnabled || roll.isEnabled || (isBendable && (bend.isEnabled || bendDirection.isEnabled))) {
+            if (always || x.isEnabled || y.isEnabled || z.isEnabled || pitch.isEnabled || yaw.isEnabled || roll.isEnabled || (isBendable && (bend.isEnabled || bendDirection.isEnabled)) || (isScalable && (scaleX.isEnabled || scaleY.isEnabled || scaleZ.isEnabled))) {
                 this.setEnabled(true);
             }
         }
@@ -308,6 +349,11 @@ public final class KeyframeAnimation implements Supplier<UUID> {
                 bend.setEnabled(enabled);
                 bendDirection.setEnabled(enabled);
             }
+            if (isScalable) {
+                scaleX.setEnabled(enabled);
+                scaleY.setEnabled(enabled);
+                scaleZ.setEnabled(enabled);
+            }
         }
 
         public boolean isEnabled() {
@@ -318,7 +364,10 @@ public final class KeyframeAnimation implements Supplier<UUID> {
                             || yaw.isEnabled()
                             || roll.isEnabled()
                             || bend != null && bend.isEnabled()
-                            || bendDirection != null && bend.isEnabled();
+                            || bendDirection != null && bend.isEnabled()
+                            || scaleX != null && scaleX.isEnabled()
+                            || scaleY != null && scaleY.isEnabled()
+                            || scaleZ != null && scaleZ.isEnabled();
         }
 
         public void verifyAndLock(int maxLength) {
@@ -330,6 +379,9 @@ public final class KeyframeAnimation implements Supplier<UUID> {
             roll.lockAndVerify(maxLength);
             if (bend != null) bend.lockAndVerify(maxLength);
             if (bendDirection != null) bendDirection.lockAndVerify(maxLength);
+            if (scaleX != null) scaleX.lockAndVerify(maxLength);
+            if (scaleY != null) scaleY.lockAndVerify(maxLength);
+            if (scaleZ != null) scaleZ.lockAndVerify(maxLength);
         }
 
 
@@ -343,6 +395,11 @@ public final class KeyframeAnimation implements Supplier<UUID> {
             if (isBendable) {
                 bend.optimize(isLooped, ret);
                 bendDirection.optimize(isLooped, ret);
+            }
+            if (isScalable) {
+                scaleX.optimize(isLooped, ret);
+                scaleY.optimize(isLooped, ret);
+                scaleZ.optimize(isLooped, ret);
             }
         }
 
@@ -468,14 +525,29 @@ public final class KeyframeAnimation implements Supplier<UUID> {
              * @param value   what value
              * @param ease    with what easing
              * @param rotate  360 degrees turn
-             * @param degrees is the value in degrees (or radians if false
+             * @param degrees is the value in degrees (or radians if false)
              * @return is the keyframe valid
              */
             public boolean addKeyFrame(int tick, float value, Ease ease, int rotate, boolean degrees) {
+                return addKeyFrame(tick, value, ease, rotate, degrees, null);
+            }
+
+            /**
+             * Add a new keyframe to the emote
+             *
+             * @param tick    where
+             * @param value   what value
+             * @param ease    with what easing
+             * @param rotate  360 degrees turn
+             * @param degrees is the value in degrees (or radians if false)
+             * @param easingArg self-explanatory
+             * @return is the keyframe valid
+             */
+            public boolean addKeyFrame(int tick, float value, Ease ease, int rotate, boolean degrees, Float easingArg) {
                 if (degrees && this.isAngle) value *= 0.01745329251f;
-                boolean bl = this.addKeyFrame(new KeyFrame(tick, value, ease));
+                boolean bl = this.addKeyFrame(new KeyFrame(tick, value, ease, easingArg));
                 if (isAngle && rotate != 0) {
-                    bl = this.addKeyFrame(new KeyFrame(tick, (float) (value + Math.PI * 2d * rotate), ease)) && bl;
+                    bl = this.addKeyFrame(new KeyFrame(tick, (float) (value + Math.PI * 2d * rotate), ease, easingArg)) && bl;
                 }
                 return bl;
             }
@@ -489,8 +561,21 @@ public final class KeyframeAnimation implements Supplier<UUID> {
              * @return is the keyframe valid
              */
             public boolean addKeyFrame(int tick, float value, Ease ease) {
+                return addKeyFrame(tick, value, ease, null);
+            }
+
+            /**
+             * Add a new keyframe to the emote
+             *
+             * @param tick  where
+             * @param value what value
+             * @param ease  with what easing
+             * @param easingArg self-explanatory
+             * @return is the keyframe valid
+             */
+            public boolean addKeyFrame(int tick, float value, Ease ease, Float easingArg) {
                 if (Float.isNaN(value)) throw new IllegalArgumentException("value can't be NaN");
-                return this.addKeyFrame(new KeyFrame(tick, value, ease));
+                return this.addKeyFrame(new KeyFrame(tick, value, ease, easingArg));
             }
 
             /**
@@ -543,17 +628,23 @@ public final class KeyframeAnimation implements Supplier<UUID> {
         public final int tick;
         public final float value;
         public final Ease ease;
+        public final Float easingArg;
 
-        public KeyFrame(int tick, float value, Ease ease) {
+        public KeyFrame(int tick, float value, Ease ease, Float easingArg) {
             this.tick = tick;
             this.value = value;
             this.ease = ease;
+            this.easingArg = easingArg;
+        }
+
+        public KeyFrame(int tick, float value, Ease ease) {
+            this(tick, value, ease, null);
         }
 
         @Override
         public boolean equals(Object other) {
             if (other instanceof KeyFrame) {
-                return ((KeyFrame) other).ease == this.ease && ((KeyFrame) other).tick == this.tick && ((KeyFrame) other).value == this.value;
+                return ((KeyFrame) other).ease == this.ease && Objects.equals(((KeyFrame) other).easingArg, this.easingArg) && ((KeyFrame) other).tick == this.tick && ((KeyFrame) other).value == this.value;
             } else return super.equals(other);
         }
 
@@ -566,16 +657,22 @@ public final class KeyframeAnimation implements Supplier<UUID> {
             int result = tick;
             result = 31 * result + Float.hashCode(value);
             result = 31 * result + ease.getId();
+            result = 31 * result + (int)Math.floor((easingArg == null ? 0 : easingArg) * 100);
             return result;
         }
 
         @Override
         public String toString() {
-            return "KeyFrame{" +
+            String string = "KeyFrame{" +
                     "tick=" + tick +
                     ", value=" + value +
-                    ", ease=" + ease +
-                    '}';
+                    ", ease=" + ease;
+            if (easingArg != null) {
+                string += ", easingArg=";
+                string += easingArg;
+            }
+            string += '}';
+            return string;
         }
     }
 
@@ -599,6 +696,7 @@ public final class KeyframeAnimation implements Supplier<UUID> {
         public boolean isEasingBefore = false;
         //public float validationThreshold = staticThreshold;
         public boolean nsfw = false;
+        @Getter
         private final HashMap<String, StateCollection> bodyParts = new HashMap<>();
 
         /**
@@ -639,15 +737,15 @@ public final class KeyframeAnimation implements Supplier<UUID> {
 
         public AnimationBuilder(float validationThreshold, AnimationFormat emoteFormat) {
             this.validationThreshold = validationThreshold;
-            head = new StateCollection(0, 0, 0, 0, 0, 0, validationThreshold, false);
-            body = new StateCollection(0, 0, 0, 0, 0, 0, validationThreshold / 8f, true);
-            rightArm = new StateCollection(-5, 2, 0, 0, 0, 0f, validationThreshold, true);
-            leftArm = new StateCollection(5, 2, 0, 0, 0, 0f, validationThreshold, true);
-            leftLeg = new StateCollection(1.9f, 12, 0.1f, 0, 0, 0, validationThreshold, true);
-            rightLeg = new StateCollection(-1.9f, 12, 0.1f, 0, 0, 0, validationThreshold, true);
-            leftItem = new StateCollection(0, 0, 0, 0, 0, 0, validationThreshold, false);
-            rightItem = new StateCollection(0, 0, 0, 0, 0, 0, validationThreshold, false);
-            torso = new StateCollection(0, 0, 0, 0, 0, 0, validationThreshold, true);
+            head = new StateCollection(0, 0, 0, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold, false, true);
+            body = new StateCollection(0, 0, 0, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold / 8f, true, true);
+            rightArm = new StateCollection(-5, 2, 0, 0, 0, 0f, 1.0F, 1.0F, 1.0F, validationThreshold, true, true);
+            leftArm = new StateCollection(5, 2, 0, 0, 0, 0f, 1.0F, 1.0F, 1.0F, validationThreshold, true, true);
+            leftLeg = new StateCollection(1.9f, 12, 0.1f, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold, true, true);
+            rightLeg = new StateCollection(-1.9f, 12, 0.1f, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold, true, true);
+            leftItem = new StateCollection(0, 0, 0, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold, false, true);
+            rightItem = new StateCollection(0, 0, 0, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold, false, true);
+            torso = new StateCollection(0, 0, 0, 0, 0, 0, 1.0F, 1.0F, 1.0F, validationThreshold, true, true);
 
             bodyParts.put("head", head);
             bodyParts.put("body", body);
@@ -725,6 +823,30 @@ public final class KeyframeAnimation implements Supplier<UUID> {
         public StateCollection getOrCreateNewPart(String name, float x, float y, float z, float pitch, float yaw, float roll, boolean bendable) {
             if (!bodyParts.containsKey(name)) {
                 bodyParts.put(name, new StateCollection(x, y, z, pitch, yaw, roll, validationThreshold, bendable));
+            }
+            return bodyParts.get(name);
+        }
+
+        /**
+         * Create a new part. X, Y, Z the default offsets, pitch, yaw, roll are the default rotations, scaleX, scaleY, scaleZ are the default scale.
+         *
+         * @param name     name
+         * @param x        x
+         * @param y        y
+         * @param z        z
+         * @param pitch    pitch
+         * @param yaw      yaw
+         * @param roll     roll
+         * @param scaleX   scaleX
+         * @param scaleY   scaleY
+         * @param scaleZ   scaleZ
+         * @param bendable is it bendable
+         * @param scalable is it scalable
+         * @return ...
+         */
+        public StateCollection getOrCreateNewPart(String name, float x, float y, float z, float pitch, float yaw, float roll, float scaleX, float scaleY, float scaleZ, boolean bendable, boolean scalable) {
+            if (!bodyParts.containsKey(name)) {
+                bodyParts.put(name, new StateCollection(x, y, z, pitch, yaw, roll, scaleX, scaleY, scaleZ, validationThreshold, bendable, scalable));
             }
             return bodyParts.get(name);
         }
